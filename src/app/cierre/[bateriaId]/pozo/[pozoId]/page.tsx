@@ -7,11 +7,9 @@ import { cn } from '@/lib/utils';
 
 interface PozoInfo {
   _id: string;
-  nombre: string;
   numero: string;
   sistema: string;
-  potencialBls: number;
-  potencialCrudo?: number;
+  potencialCrudo: number;
   potencialAgua?: number;
   carrera: number;
   estado: string;
@@ -71,7 +69,7 @@ export default function PozoCapturaPage({
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceFilledFields, setVoiceFilledFields] = useState<string[]>([]);
 
-  const potencial = pozo?.potencialBls || pozo?.potencialCrudo || 0;
+  const potencial = pozo?.potencialCrudo || 0;
   const potencialAgua = pozo?.potencialAgua || 0;
 
   const loadData = useCallback(async () => {
@@ -83,8 +81,9 @@ export default function PozoCapturaPage({
       const pozRes = await authFetch(`/api/pozos?bateria=${encodeURIComponent(bateriaId)}`);
       let pozoData: PozoInfo | null = null;
       if (pozRes.ok) {
-        const allPozos = await pozRes.json();
-        pozoData = allPozos.find((p: any) => p._id === pozoId || p.numero === pozoId) ?? null;
+        const pozJson = await pozRes.json();
+        const allPozos = pozJson.data || pozJson;
+        pozoData = (Array.isArray(allPozos) ? allPozos : []).find((p: any) => p._id === pozoId || p.numero === pozoId) ?? null;
         if (pozoData) setPozo(pozoData);
       }
 
@@ -92,7 +91,8 @@ export default function PozoCapturaPage({
       const today = new Date().toISOString().slice(0, 10);
       const cierreRes = await authFetch(`/api/cierres?fecha=${today}&bateria=${encodeURIComponent(bateriaId)}`);
       if (cierreRes.ok) {
-        const cierreList = await cierreRes.json();
+        const cierreJson = await cierreRes.json();
+        const cierreList = cierreJson.data || cierreJson;
         const cierreData = Array.isArray(cierreList) ? cierreList[0] : cierreList;
         if (cierreData?._id) {
           setCierreId(cierreData._id);
@@ -118,7 +118,7 @@ export default function PozoCapturaPage({
             if (existing.areaDiferida) setAreaDiferida(existing.areaDiferida);
           } else {
             // Defaults
-            setCrudoBls(pozoData?.potencialBls ?? pozoData?.potencialCrudo ?? 0);
+            setCrudoBls(pozoData?.potencialCrudo ?? 0);
             setAguaBls(pozoData?.potencialAgua ?? 0);
             setCarrera(pozoData?.carrera ?? 0);
           }
@@ -128,8 +128,9 @@ export default function PozoCapturaPage({
       // Fetch codigos diferida
       const codRes = await authFetch('/api/codigos');
       if (codRes.ok) {
-        const codData = await codRes.json();
-        setCodigosDiferida(codData);
+        const codJson = await codRes.json();
+        const codData = codJson.data || codJson;
+        setCodigosDiferida(Array.isArray(codData) ? codData : []);
       }
     } catch {
       setError('Error cargando datos del pozo.');
@@ -156,8 +157,8 @@ export default function PozoCapturaPage({
   useEffect(() => {
     if (areaDiferida) {
       authFetch(`/api/codigos?area=${encodeURIComponent(areaDiferida)}`)
-        .then(res => res.ok ? res.json() : [])
-        .then(data => setCodigosDiferida(data))
+        .then(res => res.ok ? res.json() : { data: [] })
+        .then(json => { const arr = json.data || json; setCodigosDiferida(Array.isArray(arr) ? arr : []); })
         .catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -293,7 +294,7 @@ export default function PozoCapturaPage({
         comentarioDiferida: comentarioDif,
         comentarios,
         horaRegistro: new Date().toTimeString().slice(0, 5),
-        ...(fotoUrl ? { fotoUrl } : {}),
+        ...(fotoUrl ? { fotos: [fotoUrl] } : {}),
       };
 
       const res = await authFetch(`/api/cierres/${cierreId}/lecturas`, {
@@ -393,7 +394,7 @@ export default function PozoCapturaPage({
             </svg>
           </button>
           <div className="flex-1">
-            <h1 className="text-lg font-bold text-white">Pozo {pozo.nombre || pozo.numero}</h1>
+            <h1 className="text-lg font-bold text-white">Pozo {pozo.numero}</h1>
             <p className="text-muted text-sm">{bateriaId} &middot; {pozo.sistema}</p>
           </div>
         </div>

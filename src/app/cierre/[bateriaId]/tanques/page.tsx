@@ -6,14 +6,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 
 interface TanqueInfo {
-  id: string;
   nombre: string;
   producto: string;
-  capacidadBls: number;
 }
 
 interface MedidaTanque {
-  tanqueId: string;
+  nombre: string;
+  producto: string;
   medidaAnterior: number;
   medidaActual: number;
   aguaLibre: number;
@@ -76,8 +75,9 @@ export default function TanquesPage({
       const batRes = await authFetch('/api/baterias');
       let bateriaData: BateriaData | null = null;
       if (batRes.ok) {
-        const allBats = await batRes.json();
-        bateriaData = allBats.find((b: any) => b._id === bateriaId || b.codigo === bateriaId) ?? null;
+        const batJson = await batRes.json();
+        const allBats = batJson.data || batJson;
+        bateriaData = (Array.isArray(allBats) ? allBats : []).find((b: any) => b._id === bateriaId || b.codigo === bateriaId) ?? null;
         if (bateriaData) setBateria(bateriaData);
       }
 
@@ -85,7 +85,8 @@ export default function TanquesPage({
       const today = new Date().toISOString().slice(0, 10);
       const cierreRes = await authFetch(`/api/cierres?fecha=${today}&bateria=${encodeURIComponent(bateriaId)}`);
       if (cierreRes.ok) {
-        const cierreList = await cierreRes.json();
+        const cierreJson = await cierreRes.json();
+        const cierreList = cierreJson.data || cierreJson;
         const cierreData = Array.isArray(cierreList) ? cierreList[0] : cierreList;
         if (cierreData?._id) {
           setCierre(cierreData);
@@ -95,7 +96,8 @@ export default function TanquesPage({
             setMedidas(cierreData.tanques);
           } else if (bateriaData?.tanques) {
             setMedidas(bateriaData.tanques.map((t: TanqueInfo) => ({
-              tanqueId: t.id,
+              nombre: t.nombre,
+              producto: t.producto,
               medidaAnterior: 0,
               medidaActual: 0,
               aguaLibre: 0,
@@ -127,7 +129,8 @@ export default function TanquesPage({
   useEffect(() => {
     if (bateria?.tanques && medidas.length === 0) {
       setMedidas(bateria.tanques.map(t => ({
-        tanqueId: t.id,
+        nombre: t.nombre,
+        producto: t.producto,
         medidaAnterior: 0,
         medidaActual: 0,
         aguaLibre: 0,
@@ -135,9 +138,9 @@ export default function TanquesPage({
     }
   }, [bateria, medidas.length]);
 
-  function updateMedida(tanqueId: string, field: keyof MedidaTanque, value: number) {
+  function updateMedida(nombre: string, field: keyof MedidaTanque, value: number) {
     setMedidas(prev =>
-      prev.map(m => m.tanqueId === tanqueId ? { ...m, [field]: value } : m)
+      prev.map(m => m.nombre === nombre ? { ...m, [field]: value } : m)
     );
   }
 
@@ -169,7 +172,7 @@ export default function TanquesPage({
     const petrolTanks = bateria.tanques.filter(t => t.producto === 'PETROLEO');
     let produccionTanque = 0;
     petrolTanks.forEach(t => {
-      const m = medidas.find(md => md.tanqueId === t.id);
+      const m = medidas.find(md => md.nombre === t.nombre);
       if (m) {
         produccionTanque += (m.medidaActual - m.medidaAnterior) - m.aguaLibre;
       }
@@ -249,17 +252,17 @@ export default function TanquesPage({
       <main className="flex-1 px-4 py-4 overflow-y-auto pb-28">
         {/* Tank measurements */}
         {bateria.tanques.map(tanque => {
-          const m = medidas.find(md => md.tanqueId === tanque.id);
+          const m = medidas.find(md => md.nombre === tanque.nombre);
           if (!m) return null;
           const isPetrol = tanque.producto === 'PETROLEO';
           const produccion = (m.medidaActual - m.medidaAnterior) - (isPetrol ? m.aguaLibre : 0);
 
           return (
-            <div key={tanque.id} className="bg-navy-light rounded-2xl p-4 mb-4 border border-navy-light/50">
+            <div key={tanque.nombre} className="bg-navy-light rounded-2xl p-4 mb-4 border border-navy-light/50">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-white font-bold">{tanque.nombre}</h3>
-                  <p className="text-muted text-sm">{tanque.producto} &middot; Cap: {tanque.capacidadBls} BLS</p>
+                  <p className="text-muted text-sm">{tanque.producto}</p>
                 </div>
                 <div className={cn(
                   'px-3 py-1 rounded-full text-xs font-bold',
@@ -275,7 +278,7 @@ export default function TanquesPage({
                   <input
                     type="number"
                     value={m.medidaAnterior || ''}
-                    onChange={e => updateMedida(tanque.id, 'medidaAnterior', Number(e.target.value) || 0)}
+                    onChange={e => updateMedida(tanque.nombre, 'medidaAnterior', Number(e.target.value) || 0)}
                     placeholder="0"
                     className="w-full p-3 text-lg rounded-xl bg-navy-mid border border-navy-light"
                   />
@@ -285,7 +288,7 @@ export default function TanquesPage({
                   <input
                     type="number"
                     value={m.medidaActual || ''}
-                    onChange={e => updateMedida(tanque.id, 'medidaActual', Number(e.target.value) || 0)}
+                    onChange={e => updateMedida(tanque.nombre, 'medidaActual', Number(e.target.value) || 0)}
                     placeholder="0"
                     className="w-full p-3 text-lg rounded-xl bg-navy-mid border border-navy-light"
                   />
@@ -296,7 +299,7 @@ export default function TanquesPage({
                     <input
                       type="number"
                       value={m.aguaLibre || ''}
-                      onChange={e => updateMedida(tanque.id, 'aguaLibre', Number(e.target.value) || 0)}
+                      onChange={e => updateMedida(tanque.nombre, 'aguaLibre', Number(e.target.value) || 0)}
                       placeholder="0"
                       className="w-full p-3 text-lg rounded-xl bg-navy-mid border border-navy-light"
                     />

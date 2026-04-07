@@ -30,8 +30,9 @@ export default function NovedadesPage({
       // Fetch battery info
       const batRes = await authFetch('/api/baterias');
       if (batRes.ok) {
-        const allBats = await batRes.json();
-        const found = allBats.find((b: any) => b._id === bateriaId || b.codigo === bateriaId);
+        const batJson = await batRes.json();
+        const allBats = batJson.data || batJson;
+        const found = (Array.isArray(allBats) ? allBats : []).find((b: any) => b._id === bateriaId || b.codigo === bateriaId);
         if (found) setBateriaLabel(found.codigo);
       }
 
@@ -39,7 +40,8 @@ export default function NovedadesPage({
       const today = new Date().toISOString().slice(0, 10);
       const cierreRes = await authFetch(`/api/cierres?fecha=${today}&bateria=${encodeURIComponent(bateriaId)}`);
       if (cierreRes.ok) {
-        const cierreList = await cierreRes.json();
+        const cierreJson = await cierreRes.json();
+        const cierreList = cierreJson.data || cierreJson;
         const cierreData = Array.isArray(cierreList) ? cierreList[0] : cierreList;
         if (cierreData?._id) {
           setCierreId(cierreData._id);

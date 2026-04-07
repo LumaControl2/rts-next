@@ -352,7 +352,7 @@ export default function SupervisorDashboard() {
 
   // Batteries without cierre
   baterias.forEach(bat => {
-    if (!cierreByBat[bat._id]) {
+    if (!cierreByBat[bat.codigo]) {
       alertas.push({
         tipo: 'SIN CIERRE',
         mensaje: `${bat.codigo} (${bat.nombre}) no tiene cierre registrado hoy`,
@@ -363,7 +363,7 @@ export default function SupervisorDashboard() {
 
   // KPI < 60%
   cierres.forEach(c => {
-    const bat = baterias.find(b => b._id === c.bateriaId);
+    const bat = baterias.find(b => b.codigo === c.bateriaId);
     if (c.kpiProduccion > 0 && c.kpiProduccion < 60) {
       alertas.push({
         tipo: 'KPI CRITICO',
@@ -375,7 +375,7 @@ export default function SupervisorDashboard() {
 
   // Produccion no justificada
   cierres.forEach(c => {
-    const bat = baterias.find(b => b._id === c.bateriaId);
+    const bat = baterias.find(b => b.codigo === c.bateriaId);
     if (c.potencialTotal > 0 && (c.totalCrudo + c.totalDiferida) < c.potencialTotal * 0.5) {
       alertas.push({
         tipo: 'PRODUCCION BAJA',
@@ -387,7 +387,7 @@ export default function SupervisorDashboard() {
 
   // Pozos parados with generic codes
   cierres.forEach(c => {
-    const bat = baterias.find(b => b._id === c.bateriaId);
+    const bat = baterias.find(b => b.codigo === c.bateriaId);
     const paradosSinCodigo = c.lecturas.filter(
       l => l.estadoPozo === 'PARADO' && (!l.codigoDiferida || l.codigoDiferida === '')
     );
@@ -403,7 +403,7 @@ export default function SupervisorDashboard() {
   // Cuadre issues (tanque discrepancy)
   cierres.forEach(c => {
     if (c.tanques && c.tanques.length > 0) {
-      const bat = baterias.find(b => b._id === c.bateriaId);
+      const bat = baterias.find(b => b.codigo === c.bateriaId);
       c.tanques.forEach(t => {
         if (t.producto === 'PETROLEO' || t.producto === 'AGUA') {
           const diff = Math.abs(t.medidaActual - t.medidaAnterior);
@@ -587,7 +587,7 @@ export default function SupervisorDashboard() {
                       </tr>
                     </thead>
                     {baterias.map(bat => {
-                      const cierre = cierreByBat[bat._id];
+                      const cierre = cierreByBat[bat.codigo];
                       const isExpanded = expandedBat === bat._id;
                       const estado = cierre ? cierre.estado : 'PENDIENTE';
                       const kpi = cierre ? cierre.kpiProduccion : null;
@@ -650,7 +650,7 @@ export default function SupervisorDashboard() {
                 {/* Mobile cards */}
                 <div className="lg:hidden space-y-3">
                   {baterias.map(bat => {
-                    const cierre = cierreByBat[bat._id];
+                    const cierre = cierreByBat[bat.codigo];
                     const isExpanded = expandedBat === bat._id;
                     const estado = cierre ? cierre.estado : 'PENDIENTE';
                     const kpi = cierre ? cierre.kpiProduccion : null;

@@ -7,11 +7,9 @@ import { formatDate, getTodayStr, cn } from '@/lib/utils';
 
 interface PozoInfo {
   _id: string;
-  nombre: string;
   numero: string;
   sistema: string;
-  potencialBls: number;
-  potencialCrudo?: number;
+  potencialCrudo: number;
   potencialAgua?: number;
   carrera: number;
   estado: string;
@@ -269,8 +267,8 @@ export default function CierrePozosPage({
                       {!isRegistered && '\u26AA'}
                     </div>
                     <div>
-                      <p className="font-bold text-white text-base">Pozo {pozo.nombre || pozo.numero}</p>
-                      <p className="text-muted text-sm">{pozo.sistema} &middot; Pot: {pozo.potencialBls || pozo.potencialCrudo || 0} BLS</p>
+                      <p className="font-bold text-white text-base">Pozo {pozo.numero}</p>
+                      <p className="text-muted text-sm">{pozo.sistema} &middot; Pot: {pozo.potencialCrudo || 0} BLS</p>
                     </div>
                   </div>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted">
@@ -289,13 +287,13 @@ export default function CierrePozosPage({
                 {isRegistered && isParado && lectura && (
                   <div className="mt-2 ml-13">
                     <span className="text-danger text-sm">
-                      PARADO | {lectura.codigoDiferida || 'Sin codigo'} | Diferida: {lectura.diferidaBls ?? (pozo.potencialBls || pozo.potencialCrudo || 0)} BLS
+                      PARADO | {lectura.codigoDiferida || 'Sin codigo'} | Diferida: {lectura.diferidaBls ?? (pozo.potencialCrudo || 0)} BLS
                     </span>
                   </div>
                 )}
                 {!isRegistered && (
                   <div className="mt-2 ml-13">
-                    <span className="text-muted text-sm">Sin registrar | Pot: {pozo.potencialBls || pozo.potencialCrudo || 0} BLS</span>
+                    <span className="text-muted text-sm">Sin registrar | Pot: {pozo.potencialCrudo || 0} BLS</span>
                   </div>
                 )}
               </button>

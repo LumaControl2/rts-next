@@ -17,7 +17,8 @@ interface LecturaInfo {
 }
 
 interface MedidaTanque {
-  tanqueId: string;
+  nombre: string;
+  producto: string;
   medidaAnterior: number;
   medidaActual: number;
   aguaLibre: number;
@@ -52,17 +53,15 @@ interface CierreData {
 
 interface PozoInfo {
   _id: string;
-  nombre: string;
   numero: string;
-  potencialBls: number;
-  potencialCrudo?: number;
+  potencialCrudo: number;
 }
 
 interface BateriaData {
   _id: string;
   codigo: string;
   nombre: string;
-  tanques: { id: string; nombre: string; producto: string; capacidadBls: number }[];
+  tanques: { nombre: string; producto: string }[];
 }
 
 interface CodigoInfo {
@@ -96,29 +95,34 @@ export default function ResumenPage({
       // Fetch battery
       const batRes = await authFetch('/api/baterias');
       if (batRes.ok) {
-        const allBats = await batRes.json();
-        const found = allBats.find((b: any) => b._id === bateriaId || b.codigo === bateriaId);
+        const batJson = await batRes.json();
+        const allBats = batJson.data || batJson;
+        const found = (Array.isArray(allBats) ? allBats : []).find((b: any) => b._id === bateriaId || b.codigo === bateriaId);
         if (found) setBateria(found);
       }
 
       // Fetch pozos
       const pozRes = await authFetch(`/api/pozos?bateria=${encodeURIComponent(bateriaId)}`);
       if (pozRes.ok) {
-        const pozData = await pozRes.json();
-        setPozos(pozData.filter((p: any) => p.estado === 'ACTIVO'));
+        const pozJson = await pozRes.json();
+        const pozData = pozJson.data || pozJson;
+        setPozos((Array.isArray(pozData) ? pozData : []).filter((p: any) => p.estado === 'ACTIVO'));
       }
 
       // Fetch codigos
       const codRes = await authFetch('/api/codigos');
       if (codRes.ok) {
-        setCodigos(await codRes.json());
+        const codJson = await codRes.json();
+        const codData = codJson.data || codJson;
+        setCodigos(Array.isArray(codData) ? codData : []);
       }
 
       // Fetch cierre
       const today = new Date().toISOString().slice(0, 10);
       const cierreRes = await authFetch(`/api/cierres?fecha=${today}&bateria=${encodeURIComponent(bateriaId)}`);
       if (cierreRes.ok) {
-        const cierreList = await cierreRes.json();
+        const cierreJson = await cierreRes.json();
+        const cierreList = cierreJson.data || cierreJson;
         const cierreData = Array.isArray(cierreList) ? cierreList[0] : cierreList;
         if (cierreData?._id) setCierre(cierreData);
       }
@@ -141,7 +145,7 @@ export default function ResumenPage({
     const totalCrudo = cierre.totalCrudo ?? lecturas.reduce((s, l) => s + (l.crudoBls || 0), 0);
     const totalAgua = cierre.totalAgua ?? lecturas.reduce((s, l) => s + (l.aguaBls || 0), 0);
 
-    const potencialTotal = cierre.potencialTotal ?? pozos.reduce((s, p) => s + (p.potencialBls || p.potencialCrudo || 0), 0);
+    const potencialTotal = cierre.potencialTotal ?? pozos.reduce((s, p) => s + (p.potencialCrudo || 0), 0);
     const kpi = cierre.kpiProduccion ?? calcularKPI(totalCrudo, potencialTotal);
 
     const corteAgua = totalCrudo + totalAgua > 0
@@ -153,11 +157,11 @@ export default function ResumenPage({
     const pozosParados = lecturas
       .filter(l => l.estadoPozo === 'PARADO')
       .map(l => {
-        const p = pozos.find(px => px._id === l.pozoId);
+        const p = pozos.find(px => px.numero === l.pozoId || px._id === l.pozoId);
         const cod = codigos.find(c => c.codigo === l.codigoDiferida);
         return {
-          nombre: p?.nombre || p?.numero || l.pozoId,
-          potencial: p?.potencialBls || p?.potencialCrudo || 0,
+          nombre: p?.numero || l.pozoId,
+          potencial: p?.potencialCrudo || 0,
           codigo: l.codigoDiferida || '',
           descripcion: cod?.descripcion || '',
           comentario: l.comentarioDiferida || '',
@@ -169,7 +173,7 @@ export default function ResumenPage({
     if (bateria?.tanques && cierre.tanques?.length) {
       const petrolTanks = bateria.tanques.filter(t => t.producto === 'PETROLEO');
       petrolTanks.forEach(t => {
-        const m = cierre.tanques.find(md => md.tanqueId === t.id);
+        const m = cierre.tanques.find(md => md.nombre === t.nombre);
         if (m) {
           produccionTanque += (m.medidaActual - m.medidaAnterior) - m.aguaLibre;
         }
