@@ -117,6 +117,9 @@ export async function POST(request: NextRequest) {
     const contextStr = formData.get('context') as string | null;
     const historyStr = formData.get('history') as string | null;
 
+    const checkWakeWord = formData.get('checkWakeWord') === 'true';
+    const WAKE_WORD = /math?i[ua]s|mati[ua]s|matheus|matheu/i;
+
     let transcript: string;
     if (textInput?.trim()) {
       transcript = textInput.trim();
@@ -130,7 +133,12 @@ export async function POST(request: NextRequest) {
       });
       transcript = transcription.text;
       if (!transcript?.trim()) {
-        return Response.json({ error: 'No se detectó voz' }, { status: 400 });
+        return Response.json({ ignored: true }, { status: 200 });
+      }
+
+      // Wake word check — return immediately if not addressed to Mathius
+      if (checkWakeWord && !WAKE_WORD.test(transcript)) {
+        return Response.json({ ignored: true, transcript }, { status: 200 });
       }
     } else {
       return Response.json({ error: 'Envíe audio o texto' }, { status: 400 });

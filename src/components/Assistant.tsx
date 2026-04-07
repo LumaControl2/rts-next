@@ -17,8 +17,6 @@ interface Message {
 
 type ListenState = 'off' | 'listening' | 'recording' | 'processing' | 'speaking';
 
-const WAKE_WORD_PATTERN = /math?i[ua]s|mati[ua]s|matheus|matheu/i;
-
 export default function Assistant() {
   const router = useRouter();
   const pathname = usePathname();
@@ -193,16 +191,23 @@ export default function Assistant() {
   const sendToAPI = useCallback(async (transcript: string, audioBlob?: Blob) => {
     if (processingRef.current) return;
     processingRef.current = true;
-    setListenState('processing');
     setError('');
+
+    // For audio: don't show "processing" yet — silently check wake word first
+    const isVoice = !!audioBlob;
+    if (!isVoice) setListenState('processing');
 
     try {
       const cierreId = await getCierreId();
       const ctx = { ...getContext(), cierreId };
 
       const fd = new FormData();
-      if (audioBlob) fd.append('audio', audioBlob, 'rec.webm');
-      else fd.append('text', transcript);
+      if (audioBlob) {
+        fd.append('audio', audioBlob, 'rec.webm');
+        fd.append('checkWakeWord', 'true');
+      } else {
+        fd.append('text', transcript);
+      }
       fd.append('context', JSON.stringify(ctx));
       fd.append('history', JSON.stringify(messagesRef.current.slice(-10).map(m => ({ role: m.role, content: m.content }))));
 
@@ -213,18 +218,15 @@ export default function Assistant() {
       });
       const json = await res.json();
 
+      // Silently ignored — no wake word detected
+      if (json.ignored) return;
+
       if (!res.ok) { setError(json.error || 'Error'); return; }
 
-      // Check wake word — if audio mode, verify "Mathius" in transcript
-      if (audioBlob) {
-        const t = (json.transcript || '').toLowerCase();
-        if (!WAKE_WORD_PATTERN.test(t)) {
-          // No wake word — ignore silently
-          return;
-        }
-      }
+      // Wake word confirmed — NOW show processing
+      if (isVoice) setListenState('processing');
 
-      const userMsg: Message = { role: 'user', content: audioBlob ? (json.transcript || transcript) : transcript, timestamp: new Date() };
+      const userMsg: Message = { role: 'user', content: isVoice ? (json.transcript || transcript) : transcript, timestamp: new Date() };
 
       // Execute ALL actions (multi-action support)
       const labels: string[] = [];
