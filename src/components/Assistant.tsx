@@ -45,6 +45,7 @@ export default function Assistant() {
   const processingRef = useRef(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listenStartedRef = useRef(false);
+  const lastSendRef = useRef(0); // cooldown between API calls
 
   // Stable refs for values that change often (prevent callback chain recreation)
   const messagesRef = useRef<Message[]>([]);
@@ -190,6 +191,10 @@ export default function Assistant() {
   // Send to API — uses refs for stable callback (no recreation on messages change)
   const sendToAPI = useCallback(async (transcript: string, audioBlob?: Blob) => {
     if (processingRef.current) return;
+    // Cooldown: minimum 4 seconds between API calls to avoid 429
+    const now = Date.now();
+    if (audioBlob && now - lastSendRef.current < 4000) return;
+    lastSendRef.current = now;
     processingRef.current = true;
     setError('');
 
@@ -220,6 +225,9 @@ export default function Assistant() {
 
       // Silently ignored — no wake word detected
       if (json.ignored) return;
+
+      // Rate limited — wait and the user can retry
+      if (res.status === 429) return;
 
       if (!res.ok) { setError(json.error || 'Error'); return; }
 
@@ -338,8 +346,8 @@ export default function Assistant() {
     setListenState('listening');
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    const SPEECH_THRESHOLD = 18;
-    const SILENCE_DURATION = 1800;
+    const SPEECH_THRESHOLD = 25; // Higher = less false triggers from ambient noise
+    const SILENCE_DURATION = 2000; // 2s silence before sending
 
     const monitor = () => {
       if (!analyserRef.current || stateRef.current === 'processing' || stateRef.current === 'speaking') return;
@@ -357,7 +365,7 @@ export default function Assistant() {
       } else if (hasSpeechRef.current && !silenceTimerRef.current) {
         silenceTimerRef.current = setTimeout(() => {
           silenceTimerRef.current = null;
-          if (Date.now() - recordingStartRef.current > 600 && hasSpeechRef.current && mediaRecorderRef.current?.state === 'recording') {
+          if (Date.now() - recordingStartRef.current > 1000 && hasSpeechRef.current && mediaRecorderRef.current?.state === 'recording') {
             try { mediaRecorderRef.current.stop(); } catch {}
             if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
             streamRef.current?.getTracks().forEach(t => t.stop());
