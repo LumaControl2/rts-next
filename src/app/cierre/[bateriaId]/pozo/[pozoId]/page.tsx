@@ -179,48 +179,70 @@ export default function PozoCapturaPage({
 
   const selectedCodigo = codigosDiferida.find(c => c.codigo === codigoDif);
 
-  // Voice recognition
+  // Voice - MediaRecorder + Groq Whisper
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   async function handleVoice() {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setError('Reconocimiento de voz no disponible. Use Chrome en Android.');
+    // If already recording, stop
+    if (voiceActive && mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
       return;
     }
 
-    // Check microphone permission
+    setError('');
+    setVoiceTranscript('');
+    setVoiceFilledFields([]);
+
+    // Request microphone
+    let stream: MediaStream;
     try {
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       setError('Permita el acceso al micrófono para usar dictado por voz.');
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'es-PE';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.continuous = false;
+    // Start recording
+    audioChunksRef.current = [];
+    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    mediaRecorderRef.current = mediaRecorder;
 
-    setVoiceActive(true);
-    setVoiceTranscript('');
-    setError('');
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunksRef.current.push(event.data);
+      }
+    };
 
-    recognition.onresult = async (event: any) => {
-      const transcript = event.results[0][0].transcript;
+    mediaRecorder.onstop = async () => {
+      // Stop all tracks
+      stream.getTracks().forEach(t => t.stop());
       setVoiceActive(false);
-      setVoiceTranscript(transcript);
+
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      if (audioBlob.size < 1000) {
+        setError('Grabación muy corta. Mantenga presionado y hable.');
+        return;
+      }
+
       setVoiceProcessing(true);
+      setVoiceTranscript('Transcribiendo audio...');
 
       try {
-        const res = await fetch('/api/voice-parse', {
+        // Send audio to Whisper + Llama via our API
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+
+        const res = await fetch('/api/voice-transcribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ texto: transcript }),
+          body: formData,
         });
         const json = await res.json();
 
         if (res.ok && json.data) {
           const parsed = json.data;
+          setVoiceTranscript(json.transcript || '');
+
           const filled: string[] = [];
           if (typeof parsed.crudoBls === 'number') { setCrudoBls(parsed.crudoBls); filled.push('crudoBls'); }
           if (typeof parsed.aguaBls === 'number') { setAguaBls(parsed.aguaBls); filled.push('aguaBls'); }
@@ -234,7 +256,6 @@ export default function PozoCapturaPage({
           if (parsed.estado === 'BOMBEANDO') { setEstadoPozo('BOMBEANDO'); filled.push('estadoPozo'); }
           if (parsed.codigoDiferida && parsed.codigoDiferida !== 'null') {
             setCodigoDif(parsed.codigoDiferida);
-            // Also set the area for the diferida selector
             const matchCode = codigosDiferida.find(c => c.codigo === parsed.codigoDiferida);
             if (matchCode) setAreaDiferida(matchCode.area);
             filled.push('codigoDiferida');
@@ -243,34 +264,24 @@ export default function PozoCapturaPage({
           setVoiceFilledFields(filled);
           setVoiceTranscript(prev => prev + ` → ${filled.length} campos llenados`);
         } else {
-          setError(json.error || 'Error al procesar voz. Intente de nuevo.');
+          setError(json.error || 'Error al procesar audio.');
         }
-      } catch (err) {
-        setError('Error de conexión al procesar voz.');
+      } catch {
+        setError('Error de conexión al procesar audio.');
       } finally {
         setVoiceProcessing(false);
       }
     };
 
-    recognition.onerror = (event: any) => {
-      setVoiceActive(false);
-      setVoiceProcessing(false);
-      if (event.error === 'not-allowed') {
-        setError('Micrófono bloqueado. Permita el acceso en la configuración del navegador.');
-      } else if (event.error === 'no-speech') {
-        setError('No se detectó voz. Intente de nuevo.');
-      } else if (event.error === 'network') {
-        setError('Sin conexión. El dictado requiere señal de internet.');
-      } else {
-        setError(`Error de voz: ${event.error}`);
+    mediaRecorder.start();
+    setVoiceActive(true);
+
+    // Auto-stop after 30 seconds
+    setTimeout(() => {
+      if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
       }
-    };
-
-    recognition.onend = () => {
-      setVoiceActive(false);
-    };
-
-    recognition.start();
+    }, 30000);
   }
 
   // Photo capture
@@ -663,9 +674,9 @@ export default function PozoCapturaPage({
         <div className="flex gap-3 mb-4">
           <button
             onClick={handleVoice}
-            disabled={voiceActive || voiceProcessing}
+            disabled={voiceProcessing}
             className={cn(
-              'flex-1 py-3 rounded-xl font-bold text-base transition-all border-2 flex items-center justify-center gap-2',
+              'flex-1 py-4 rounded-xl font-bold text-base transition-all border-2 flex items-center justify-center gap-2',
               voiceActive
                 ? 'bg-danger/20 border-danger text-danger animate-pulse'
                 : voiceProcessing
@@ -680,13 +691,13 @@ export default function PozoCapturaPage({
               </>
             ) : voiceActive ? (
               <>
-                <span className="text-xl">{'\uD83D\uDD34'}</span>
-                Escuchando... (hable ahora)
+                <span className="text-2xl">{'\uD83D\uDD34'}</span>
+                <span>GRABANDO... toque para detener</span>
               </>
             ) : (
               <>
-                <span className="text-xl">{'\uD83C\uDFA4'}</span>
-                Dictar lectura
+                <span className="text-2xl">{'\uD83C\uDFA4'}</span>
+                <span>Dictar lectura</span>
               </>
             )}
           </button>
