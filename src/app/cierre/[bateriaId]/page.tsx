@@ -73,17 +73,18 @@ export default function CierrePozosPage({
       // Fetch battery info
       const batRes = await authFetch('/api/baterias');
       if (batRes.ok) {
-        const allBats = await batRes.json();
-        const found = allBats.find((b: any) => b._id === bateriaId || b.codigo === bateriaId);
+        const batJson = await batRes.json();
+        const allBats = batJson.data || batJson;
+        const found = (Array.isArray(allBats) ? allBats : []).find((b: any) => b._id === bateriaId || b.codigo === bateriaId);
         if (found) setBateria(found);
       }
 
       // Fetch pozos for this battery
       const pozRes = await authFetch(`/api/pozos?bateria=${encodeURIComponent(bateriaId)}`);
       if (pozRes.ok) {
-        const pozData = await pozRes.json();
-        const activos = pozData.filter((p: any) => p.estado === 'ACTIVO');
-        setPozos(activos);
+        const pozJson = await pozRes.json();
+        const pozData = pozJson.data || pozJson;
+        setPozos(Array.isArray(pozData) ? pozData : []);
       }
 
       // Check for existing cierre today
@@ -92,7 +93,8 @@ export default function CierrePozosPage({
       let cierreData: CierreInfo | null = null;
 
       if (cierreRes.ok) {
-        const cierreList = await cierreRes.json();
+        const cierreJson = await cierreRes.json();
+        const cierreList = cierreJson.data || cierreJson;
         if (Array.isArray(cierreList) && cierreList.length > 0) {
           cierreData = cierreList[0];
         } else if (!Array.isArray(cierreList) && cierreList._id) {
@@ -109,7 +111,8 @@ export default function CierrePozosPage({
           body: JSON.stringify({ bateriaId, turno }),
         });
         if (createRes.ok) {
-          cierreData = await createRes.json();
+          const createJson = await createRes.json();
+          cierreData = createJson.data || createJson;
         }
       }
 
@@ -236,7 +239,7 @@ export default function CierrePozosPage({
       <main className="flex-1 px-4 py-4 overflow-y-auto pb-32">
         <div className="space-y-3">
           {pozos.map(pozo => {
-            const lectura = getLectura(pozo._id);
+            const lectura = getLectura(pozo.numero);
             const isRegistered = !!lectura;
             const isBombeando = lectura?.estadoPozo === 'BOMBEANDO';
             const isParado = lectura?.estadoPozo === 'PARADO';
@@ -244,7 +247,7 @@ export default function CierrePozosPage({
             return (
               <button
                 key={pozo._id}
-                onClick={() => router.push(`/cierre/${encodeURIComponent(bateriaId)}/pozo/${encodeURIComponent(pozo._id)}`)}
+                onClick={() => router.push(`/cierre/${encodeURIComponent(bateriaId)}/pozo/${encodeURIComponent(pozo.numero)}`)}
                 className={cn(
                   'w-full text-left rounded-2xl p-4 border transition-all active:scale-98',
                   isRegistered && isBombeando && 'bg-success/10 border-success/30',
