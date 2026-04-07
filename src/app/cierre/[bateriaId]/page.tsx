@@ -94,13 +94,16 @@ export default function CierrePozosPage({
         const cierreJson = await cierreRes.json();
         const cierreList = cierreJson.data || cierreJson;
         if (Array.isArray(cierreList) && cierreList.length > 0) {
-          cierreData = cierreList[0];
-        } else if (!Array.isArray(cierreList) && cierreList._id) {
+          // Prefer editable cierre (EN_PROGRESO or RECHAZADO)
+          cierreData = cierreList.find((c: any) => c.estado === 'EN_PROGRESO' || c.estado === 'RECHAZADO')
+            || cierreList.find((c: any) => c.estado !== 'APROBADO' && c.estado !== 'CERRADO')
+            || null;
+        } else if (!Array.isArray(cierreList) && cierreList._id && cierreList.estado !== 'APROBADO') {
           cierreData = cierreList;
         }
       }
 
-      // If no cierre exists, create one
+      // If no editable cierre exists, create one
       if (!cierreData) {
         const hour = new Date().getHours();
         const turno = hour >= 6 && hour < 18 ? 'DIA' : 'NOCHE';

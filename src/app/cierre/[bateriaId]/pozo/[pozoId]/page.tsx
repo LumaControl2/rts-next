@@ -95,7 +95,15 @@ export default function PozoCapturaPage({
       if (cierreRes.ok) {
         const cierreJson = await cierreRes.json();
         const cierreList = cierreJson.data || cierreJson;
-        const cierreData = Array.isArray(cierreList) ? cierreList[0] : cierreList;
+        // Prefer EN_PROGRESO or RECHAZADO cierre (editable), skip APROBADO/ENVIADO
+        let cierreData = null;
+        if (Array.isArray(cierreList)) {
+          cierreData = cierreList.find((c: any) => c.estado === 'EN_PROGRESO' || c.estado === 'RECHAZADO')
+            || cierreList.find((c: any) => c.estado !== 'APROBADO' && c.estado !== 'CERRADO')
+            || cierreList[0];
+        } else {
+          cierreData = cierreList;
+        }
         if (cierreData?._id) {
           setCierreId(cierreData._id);
 
@@ -346,7 +354,7 @@ export default function PozoCapturaPage({
         areaDiferida,
         comentarioDiferida: comentarioDif,
         comentarios,
-        horaRegistro: new Date().toTimeString().slice(0, 5),
+        horaRegistro: new Date().toISOString(),
         ...(fotoUrl ? { fotos: [fotoUrl] } : {}),
       };
 

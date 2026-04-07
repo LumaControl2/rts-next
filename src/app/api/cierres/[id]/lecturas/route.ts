@@ -79,6 +79,14 @@ export async function POST(
       );
     }
 
+    // Block modifications to approved/closed cierres
+    if (cierre.estado === 'APROBADO' || cierre.estado === 'CERRADO') {
+      return Response.json(
+        { error: 'No se puede modificar un cierre aprobado' },
+        { status: 403 }
+      );
+    }
+
     const { pozoId } = body;
     if (!pozoId) {
       return Response.json(
