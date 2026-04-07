@@ -94,18 +94,46 @@ export default function Assistant() {
     toastTimerRef.current = setTimeout(() => setToast(''), 5000);
   }, []);
 
-  // TTS
+  // TTS — robust for mobile Chrome (no user gesture context)
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise((resolve) => {
       if (typeof window === 'undefined' || !window.speechSynthesis) { resolve(); return; }
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'es-PE';
-      u.rate = 1.15;
-      u.onstart = () => setListenState('speaking');
-      u.onend = () => { setListenState('off'); resolve(); };
-      u.onerror = () => { setListenState('off'); resolve(); };
-      window.speechSynthesis.speak(u);
+
+      // Small delay after cancel() — Chrome mobile drops speak() if called immediately
+      setTimeout(() => {
+        const u = new SpeechSynthesisUtterance(text);
+        utteranceRef.current = u; // prevent GC
+        u.lang = 'es';
+        u.rate = 1.1;
+
+        // Try to find a Spanish voice
+        const voices = window.speechSynthesis.getVoices();
+        const esVoice = voices.find(v => v.lang.startsWith('es'));
+        if (esVoice) u.voice = esVoice;
+
+        let resolved = false;
+        const done = () => { if (!resolved) { resolved = true; setListenState('off'); resolve(); } };
+
+        u.onstart = () => setListenState('speaking');
+        u.onend = done;
+        u.onerror = done;
+        // Fallback timeout in case events don't fire (mobile quirk)
+        const fallback = setTimeout(done, Math.max(3000, text.length * 80));
+        u.onend = () => { clearTimeout(fallback); done(); };
+        u.onerror = () => { clearTimeout(fallback); done(); };
+
+        window.speechSynthesis.speak(u);
+
+        // Chrome bug: speaking can pause after 15s. Resume workaround.
+        const resumeInterval = setInterval(() => {
+          if (!window.speechSynthesis.speaking) { clearInterval(resumeInterval); return; }
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        }, 10000);
+        u.onend = () => { clearInterval(resumeInterval); clearTimeout(fallback); done(); };
+      }, 150);
     });
   }, []);
 
@@ -241,6 +269,17 @@ export default function Assistant() {
   // Keep ref in sync
   useEffect(() => { sendToAPIRef.current = sendToAPI; }, [sendToAPI]);
 
+  // Unlock TTS on first user interaction (Chrome requires gesture for speech)
+  const ttsUnlockedRef = useRef(false);
+  const unlockTTS = useCallback(() => {
+    if (ttsUnlockedRef.current || typeof window === 'undefined') return;
+    ttsUnlockedRef.current = true;
+    const u = new SpeechSynthesisUtterance('');
+    u.volume = 0;
+    window.speechSynthesis?.speak(u);
+    window.speechSynthesis?.getVoices();
+  }, []);
+
   // ─── CONTINUOUS BACKGROUND LISTENING ────────────────
 
   const stopListening = useCallback(() => {
@@ -263,6 +302,7 @@ export default function Assistant() {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      unlockTTS(); // User granted mic = user gesture context → unlock TTS
     } catch {
       setError('Permita el micrófono');
       return;
@@ -327,7 +367,7 @@ export default function Assistant() {
       rafRef.current = requestAnimationFrame(monitor);
     };
     rafRef.current = requestAnimationFrame(monitor);
-  }, [stopListening]);
+  }, [stopListening, unlockTTS]);
 
   // Auto-restart listening after idle
   useEffect(() => {
@@ -398,7 +438,7 @@ export default function Assistant() {
 
       {/* ── Floating Mathius button ── */}
       <button
-        onClick={() => setChatOpen(!chatOpen)}
+        onClick={() => { unlockTTS(); setChatOpen(!chatOpen); }}
         className={cn(
           'fixed z-50 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all',
           'bottom-20 right-4',
