@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, type AuthUser } from '@/hooks/useAuth';
+import { onAssistantEvent } from '@/lib/events';
 import { formatDate, cn } from '@/lib/utils';
 
 interface BateriaInfo {
@@ -110,6 +111,15 @@ export default function HomePage() {
       loadBaterias();
     }
   }, [user, token, loadBaterias]);
+
+  // Refresh when assistant creates jornada or changes data
+  useEffect(() => {
+    return onAssistantEvent((event) => {
+      if (event.type === 'JORNADA_CREADA' || event.type === 'DATOS_CAMBIARON') {
+        loadBaterias();
+      }
+    });
+  }, [loadBaterias]);
 
   // Redirect supervisors
   useEffect(() => {

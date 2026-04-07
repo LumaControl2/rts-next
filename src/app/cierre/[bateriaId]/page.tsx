@@ -3,6 +3,7 @@
 import { use, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { onAssistantEvent } from '@/lib/events';
 import { formatDate, getTodayStr, cn } from '@/lib/utils';
 
 interface PozoInfo {
@@ -128,6 +129,15 @@ export default function CierrePozosPage({
   useEffect(() => {
     if (user) loadData();
   }, [user, loadData]);
+
+  // Listen for assistant events to auto-refresh
+  useEffect(() => {
+    return onAssistantEvent((event) => {
+      if (event.type === 'POZO_REGISTRADO' || event.type === 'DATOS_CAMBIARON') {
+        loadData();
+      }
+    });
+  }, [loadData]);
 
   if (authLoading || loading) {
     return (
