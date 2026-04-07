@@ -8,13 +8,18 @@ import Bateria from '@/models/Bateria';
 import Jornada from '@/models/Jornada';
 
 const SYSTEM_PROMPT = `Eres el asistente de campo "RT NEXT" para operadores petroleros del Lote I en Talara, Piura, Perú.
-Hablas español informal pero profesional. Eres conciso y directo como un compañero de campo.
+Hablas español informal pero profesional. Eres conciso y directo como un compañero de campo experimentado.
 
-Tu trabajo es ayudar al operador en su jornada: iniciar turno, registrar pozos, cerrar baterías, y reportar novedades.
+Tu trabajo es:
+1. EJECUTAR: registrar pozos, iniciar jornada, navegar a baterías, cerrar baterías
+2. INFORMAR: decir qué pozos tiene una batería, cómo cerró ayer, cuántos faltan, rangos normales
+3. ALERTAR: si un dato está fuera de rango normal, avisar al operador
+
+Tienes acceso a TODA la información del campo en tiempo real: pozos, potenciales, datos de ayer, cierre activo, pozos pendientes.
 
 SIEMPRE respondes con un JSON con esta estructura:
 {
-  "mensaje": "Lo que le dices al operador (texto corto, máximo 2-3 oraciones)",
+  "mensaje": "Lo que le dices al operador (texto corto, máximo 3 oraciones). Incluye datos concretos cuando informas.",
   "accion": null o un objeto de acción (ver abajo),
   "sugerencia": "Texto opcional de qué puede decir después el operador"
 }
@@ -28,16 +33,30 @@ ACCIONES POSIBLES:
 - {"tipo": "CERRAR_BATERIA", "bateriaId": "BP 210", "novedades": "texto"}
 - {"tipo": "INFO", "consulta": "texto"} — cuando el operador pregunta algo sin acción
 
-REGLAS:
+REGLAS DE ACCIÓN:
 1. Si el operador saluda o dice "inicio turno", pregunta placa y km si no los dijo
 2. Si dice datos de un pozo, genera REGISTRAR_POZO con todos los campos que mencionó
 3. Si dice "parado" + motivo, genera REGISTRAR_POZO_PARADO con el código de diferida correcto
 4. Si dice "copiar ayer" o "los demás están igual", genera COPIAR_AYER
 5. Si dice "cerrar batería" o "eso es todo", genera CERRAR_BATERIA
-6. Si dice algo que no entiendes, pregunta amablemente
-7. SIEMPRE confirma lo que registraste: repite los datos clave
-8. Sé MUY conciso — el operador está en campo, no quiere leer párrafos
-9. Usa los números de pozo reales del Lote I
+6. SIEMPRE confirma lo que registraste: repite los datos clave
+7. Sé MUY conciso — el operador está en campo, no quiere leer párrafos
+
+REGLAS DE CONSULTA (cuando el operador PREGUNTA algo):
+8. "¿Qué pozos tiene la batería X?" → Lista los pozos con su potencial desde los DATOS proporcionados
+9. "¿Cómo cerró el pozo X ayer?" → Busca en DATOS DE AYER y da los valores
+10. "¿Cuál es el rango normal del pozo X?" → Da el potencial (crudo, agua, gas) y carrera del maestro
+11. "¿Cuántos faltan?" → Lista los pozos PENDIENTES del cierre activo
+12. "¿Cuántos llevo?" → Da el resumen: pozos registrados, crudo total, KPI
+13. "¿Cómo va el día?" → Resumen de todos los cierres del día
+14. "¿Qué pozos están parados?" → Lista pozos con estadoPozo=PARADO de hoy y ayer
+15. Si pregunta algo y NO tienes datos, dilo honestamente: "No tengo esa información"
+16. Para consultas, usa accion: {"tipo": "INFO"} — NO modifica nada, solo informa
+
+REGLAS DE ALERTA:
+17. Si el operador reporta presión > 2x el valor de ayer para ese pozo → alertar
+18. Si reporta crudo = 0 pero dice "bombeando" → preguntar si está parado
+19. Si el pozo estaba parado ayer y hoy reporta bombeando → confirmar: "¿ya se reparó?"
 
 CÓDIGOS DE DIFERIDA:
 M01=Falla Motor, M02=Falla Equipo, M03=Falla Motor Eléctrico, M04=Falla Motor Gas, M06=Preventivo PU, M09=Falla Reductor, M10=Preventivo Motor, M11=Cambio Correas, M13=Falla Variador, M15=Falla Tablero, M25=Falla Cabezal, M26=Cambio Empaquetadura, M27=Cambio Carrera, M28=Cambio Vástago, M32=Centrado PU, M33=Alineado
@@ -91,53 +110,129 @@ export async function POST(request: NextRequest) {
     const context = contextStr ? JSON.parse(contextStr) : {};
     const history = historyStr ? JSON.parse(historyStr) : [];
 
-    // Get real-time state from DB
+    // Get real-time state from DB — RICH CONTEXT
     let dbContext = '';
     try {
       const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
 
-      // Get operator's baterias
+      // 1. All batteries
       const baterias = await Bateria.find({ activa: true }).lean();
-      const bateriaNames = baterias.map((b: any) => b.codigo).join(', ');
 
-      // Get today's cierres for this operator
-      const cierres = await Cierre.find({
-        operadorId: auth.userId,
+      // 2. All wells with potentials
+      const allPozos = await Pozo.find({ activo: true, grupo: 'Basica' }).lean();
+
+      // 3. Today's cierres
+      const cierresHoy = await Cierre.find({
         fecha: { $gte: new Date(today), $lt: new Date(today + 'T23:59:59Z') },
       }).lean();
 
-      const cierreInfo = cierres.map((c: any) =>
-        `${c.bateriaId}: ${c.estado}, ${c.pozosRegistrados}/${c.totalPozos} pozos, crudo=${c.totalCrudo}`
-      ).join(' | ');
+      // 4. Yesterday's cierres (for "how did it close yesterday")
+      const cierresAyer = await Cierre.find({
+        fecha: { $gte: new Date(yesterdayStr), $lt: new Date(yesterdayStr + 'T23:59:59Z') },
+        estado: { $in: ['APROBADO', 'ENVIADO'] },
+      }).lean();
 
-      // Get active jornada
+      // 5. Active jornada
       const jornada = await Jornada.findOne({
         operadorId: auth.userId,
         estado: 'ACTIVA',
       }).lean();
 
-      // Current cierre context
+      // 6. Current active cierre
       const activeCierre = context.bateriaId
-        ? cierres.find((c: any) => c.bateriaId === context.bateriaId && c.estado === 'EN_PROGRESO')
+        ? cierresHoy.find((c: any) => c.bateriaId === context.bateriaId && (c.estado === 'EN_PROGRESO' || c.estado === 'RECHAZADO'))
         : null;
 
-      let pozosRegistrados = '';
+      // Build battery summary with well counts
+      const batSummary = baterias.map((b: any) => {
+        const pozos = allPozos.filter((p: any) => p.bateria === b.codigo);
+        const potTotal = pozos.reduce((s: number, p: any) => s + (p.potencialCrudo || 0), 0);
+        const cierre = cierresHoy.find((c: any) => c.bateriaId === b.codigo && c.estado !== 'APROBADO');
+        const cierreAprobado = cierresHoy.find((c: any) => c.bateriaId === b.codigo && c.estado === 'APROBADO');
+        return `${b.codigo} (${b.zona}): ${pozos.length} pozos, pot=${potTotal} BLS` +
+          (cierre ? `, cierre ${cierre.estado} ${cierre.pozosRegistrados}/${cierre.totalPozos} pozos, crudo=${cierre.totalCrudo}` : '') +
+          (cierreAprobado ? `, APROBADO crudo=${cierreAprobado.totalCrudo}` : '');
+      }).join('\n  ');
+
+      // Build detailed well list for current battery
+      let wellDetail = '';
+      if (context.bateriaId) {
+        const bpozos = allPozos.filter((p: any) => p.bateria === context.bateriaId);
+        // Get yesterday's data for these wells
+        const cierreAyer = cierresAyer.find((c: any) => c.bateriaId === context.bateriaId);
+        const lecturasAyer = cierreAyer ? (cierreAyer as any).lecturas || [] : [];
+
+        wellDetail = '\nPOZOS DE ' + context.bateriaId + ':\n' + bpozos.map((p: any) => {
+          const lectAyer = lecturasAyer.find((l: any) => l.pozoId === p.numero);
+          const lectHoy = activeCierre
+            ? (activeCierre as any).lecturas?.find((l: any) => l.pozoId === p.numero)
+            : null;
+
+          let line = `  ${p.numero} | ${p.sistema} | Cat.${p.categoria} | Pot: crudo=${p.potencialCrudo} agua=${p.potencialAgua} gas=${p.potencialGas} | carrera=${p.carrera}`;
+          if (lectAyer) {
+            line += ` | AYER: crudo=${lectAyer.crudoBls} agua=${lectAyer.aguaBls} pTubos=${lectAyer.presionTubos} gpm=${lectAyer.gpm} estado=${lectAyer.estadoPozo}`;
+            if (lectAyer.estadoPozo === 'PARADO') line += ` dif=${lectAyer.codigoDiferida}`;
+          }
+          if (lectHoy) {
+            line += ` | HOY: crudo=${lectHoy.crudoBls} agua=${lectHoy.aguaBls} pTubos=${lectHoy.presionTubos} estado=${lectHoy.estadoPozo} [REGISTRADO]`;
+          } else {
+            line += ' | HOY: [PENDIENTE]';
+          }
+          return line;
+        }).join('\n');
+      }
+
+      // Build registrados vs pendientes for active cierre
+      let cierreDetail = '';
       if (activeCierre) {
-        const registrados = (activeCierre as any).lecturas?.map((l: any) => l.pozoId).join(', ') || 'ninguno';
-        const totalPozos = await Pozo.countDocuments({ bateria: (activeCierre as any).bateriaId, activo: true, grupo: 'Basica' });
-        pozosRegistrados = `Pozos registrados: ${registrados}. Total: ${totalPozos}`;
+        const registrados = (activeCierre as any).lecturas?.map((l: any) => l.pozoId) || [];
+        const bpozos = allPozos.filter((p: any) => p.bateria === context.bateriaId);
+        const pendientes = bpozos.filter((p: any) => !registrados.includes(p.numero)).map((p: any) => p.numero);
+        cierreDetail = `\nCIERRE ACTIVO ${context.bateriaId}:
+  ID: ${(activeCierre as any)._id}
+  Registrados (${registrados.length}): ${registrados.join(', ') || 'ninguno'}
+  Pendientes (${pendientes.length}): ${pendientes.join(', ') || 'todos registrados'}
+  Totales: crudo=${(activeCierre as any).totalCrudo} agua=${(activeCierre as any).totalAgua} dif=${(activeCierre as any).totalDiferida}
+  KPI: ${(activeCierre as any).kpiProduccion}%`;
+      }
+
+      // Production ranges (from yesterday's data across all batteries)
+      let rangesInfo = '';
+      if (context.bateriaId) {
+        const cierreAyer = cierresAyer.find((c: any) => c.bateriaId === context.bateriaId);
+        if (cierreAyer) {
+          rangesInfo = `\nDATOS DE AYER ${context.bateriaId}:
+  Crudo total: ${(cierreAyer as any).totalCrudo} BLS
+  Agua total: ${(cierreAyer as any).totalAgua} BLS
+  Diferida: ${(cierreAyer as any).totalDiferida} BLS
+  Pozos parados: ${(cierreAyer as any).pozosParados}
+  KPI: ${(cierreAyer as any).kpiProduccion}%`;
+        }
       }
 
       dbContext = `
-ESTADO ACTUAL:
-- Baterías del lote: ${bateriaNames}
-- Cierres hoy: ${cierreInfo || 'ninguno'}
-- Jornada activa: ${jornada ? `SI (placa: ${(jornada as any).vehiculo?.placa}, km: ${(jornada as any).vehiculo?.kmInicio})` : 'NO'}
-- Batería actual del operador: ${context.bateriaId || 'ninguna seleccionada'}
-- ${pozosRegistrados}
-- Cierre activo ID: ${activeCierre ? (activeCierre as any)._id : 'ninguno'}`;
-    } catch {
-      dbContext = '\nNo se pudo cargar contexto de la base de datos.';
+ESTADO ACTUAL DEL CAMPO:
+Jornada: ${jornada ? `ACTIVA (placa: ${(jornada as any).vehiculo?.placa}, km: ${(jornada as any).vehiculo?.kmInicio}, actividades: ${(jornada as any).actividades?.length || 0})` : 'NO INICIADA'}
+Pantalla actual: ${context.screen || 'desconocida'}
+Batería seleccionada: ${context.bateriaId || 'ninguna'}
+
+BATERÍAS DEL LOTE I:
+  ${batSummary}
+${wellDetail}
+${cierreDetail}
+${rangesInfo}
+
+CAPACIDADES DE CONSULTA:
+- Si preguntan por pozos de una batería, LISTAR los pozos con sus datos
+- Si preguntan cómo cerró un pozo ayer, DAR los datos de ayer
+- Si preguntan el potencial o rango normal, DAR los datos del maestro de pozos
+- Si preguntan cuántos faltan, LISTAR los pendientes
+- Si preguntan el resumen del día, DAR totales de todos los cierres`;
+    } catch (err) {
+      dbContext = '\nError cargando contexto: ' + (err instanceof Error ? err.message : 'desconocido');
     }
 
     // 3. Build conversation messages
