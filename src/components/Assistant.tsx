@@ -95,15 +95,15 @@ export default function Assistant() {
     if (tipo === 'INICIAR_JORNADA') {
       if (actionResult?.success) {
         emitAssistantEvent({ type: 'JORNADA_CREADA', payload: actionResult });
-        // Navigate to jornada page which will show the active jornada
         setTimeout(() => {
           router.push('/jornada');
-          // Force home to refresh too
           emitAssistantEvent({ type: 'DATOS_CAMBIARON' });
         }, 800);
-        return { label: '🚗 Jornada iniciada', success: true };
+        const label = actionResult.yaExistia
+          ? `🚗 Jornada ya activa (${actionResult.placa})`
+          : `🚗 Jornada iniciada — ${actionResult.placa}, km ${actionResult.kmInicio}`;
+        return { label, success: true };
       }
-      // If it failed because no placa/km, the AI should have asked — don't navigate
       return { label: `❌ ${actionResult?.error || 'Error al iniciar jornada'}`, success: false };
     }
 

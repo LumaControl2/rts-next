@@ -288,12 +288,19 @@ async function executeAction(accion: any, userId: string, context: any) {
         const placa = accion.datos?.placa;
         const kmInicio = accion.datos?.kmInicio;
         if (!placa) {
-          return { success: false, error: 'Falta la placa del vehículo' };
+          return { success: false, error: 'Diga la placa del vehículo para iniciar' };
         }
         // Check if there's already an active jornada
         const existing = await Jornada.findOne({ operadorId: userId, estado: 'ACTIVA' });
         if (existing) {
-          return { success: false, error: 'Ya tiene una jornada activa' };
+          return {
+            success: true,
+            tipo: 'JORNADA_CREADA',
+            id: existing._id,
+            placa: (existing as any).vehiculo?.placa,
+            kmInicio: (existing as any).vehiculo?.kmInicio,
+            yaExistia: true,
+          };
         }
         const jornada = await Jornada.create({
           fecha: new Date(),
@@ -302,8 +309,16 @@ async function executeAction(accion: any, userId: string, context: any) {
           estado: 'ACTIVA',
           vehiculo: { placa: String(placa).toUpperCase(), kmInicio: kmInicio || 0 },
           actividades: [],
+          resumen: {
+            kmRecorridos: 0,
+            totalActividades: 0,
+            pozosVisitados: 0,
+            bateriasCerradas: 0,
+            tiempoTotal: 0,
+            fotosTomadas: 0,
+          },
         });
-        return { success: true, tipo: 'JORNADA_CREADA', id: jornada._id, placa, kmInicio };
+        return { success: true, tipo: 'JORNADA_CREADA', id: jornada._id, placa: String(placa).toUpperCase(), kmInicio: kmInicio || 0 };
       }
 
       case 'REGISTRAR_POZO': {
@@ -441,6 +456,7 @@ async function executeAction(accion: any, userId: string, context: any) {
         return { success: false, error: `Acción desconocida: ${accion.tipo}` };
     }
   } catch (error: any) {
-    return { success: false, error: error.message };
+    console.error('executeAction error:', accion.tipo, error);
+    return { success: false, error: error?.message || 'Error ejecutando acción' };
   }
 }
