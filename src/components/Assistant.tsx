@@ -114,7 +114,9 @@ export default function Assistant() {
       else if (accion.pantalla === 'tanques' && accion.bateriaId) target = `/cierre/${encodeURIComponent(accion.bateriaId)}/tanques`;
       else if (accion.pantalla === 'resumen' && accion.bateriaId) target = `/cierre/${encodeURIComponent(accion.bateriaId)}/resumen`;
       else if (accion.pantalla === 'jornada') target = '/jornada';
-      setTimeout(() => router.push(target), 400);
+      // Use longer delay for chained actions so previous actions complete first
+      setTimeout(() => router.push(target), 600);
+      emitAssistantEvent({ type: 'DATOS_CAMBIARON' });
       return { label: `📍 → ${accion.pozoId || accion.bateriaId || accion.pantalla}`, success: true };
     }
 
@@ -189,19 +191,28 @@ export default function Assistant() {
 
       const userMsg: Message = { role: 'user', content: audioBlob ? (json.transcript || transcript) : transcript, timestamp: new Date() };
 
-      let actionLabel = '';
-      let actionSuccess = false;
-      if (json.response?.accion && json.response.accion.tipo !== 'INFO') {
-        const result = await executeAction(json.response.accion, json.actionResult);
-        actionLabel = result.label;
-        actionSuccess = result.success;
+      // Execute ALL actions (multi-action support)
+      const labels: string[] = [];
+      let anySuccess = false;
+      const results = json.actionResults || [];
+      // Also support legacy single action
+      const acciones = Array.isArray(json.response?.acciones) ? json.response.acciones : (json.response?.accion ? [json.response.accion] : []);
+
+      for (let i = 0; i < acciones.length; i++) {
+        const accion = acciones[i];
+        if (!accion || accion.tipo === 'INFO') continue;
+        const actionResult = results[i] || json.actionResult;
+        const result = await executeAction(accion, actionResult);
+        if (result.label) labels.push(result.label);
+        if (result.success) anySuccess = true;
       }
 
       const botMsg: Message = {
         role: 'assistant',
         content: json.response?.mensaje || 'No entendí, repita.',
         timestamp: new Date(),
-        actionLabel, actionSuccess,
+        actionLabel: labels.join('\n'),
+        actionSuccess: anySuccess || labels.length === 0,
         suggestions: json.response?.sugerencias,
       };
 
@@ -209,7 +220,7 @@ export default function Assistant() {
 
       // Show toast (non-intrusive) and speak
       if (json.response?.mensaje) {
-        showToast(actionLabel || json.response.mensaje);
+        showToast(labels.join(' | ') || json.response.mensaje);
         await speak(json.response.mensaje);
       }
     } catch {
