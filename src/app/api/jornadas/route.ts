@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { dbConnect } from '@/lib/mongodb';
 import { getUserFromRequest } from '@/lib/authMiddleware';
 import Jornada from '@/models/Jornada';
+import '@/models/Usuario'; // Required for populate('operadorId')
 
 export async function GET(request: NextRequest) {
   try {

@@ -7,6 +7,7 @@ import { dbConnect } from '@/lib/mongodb';
 import { getUserFromRequest } from '@/lib/authMiddleware';
 import Cierre from '@/models/Cierre';
 import Pozo from '@/models/Pozo';
+import '@/models/Usuario'; // Required for populate('operadorId')
 
 export async function GET(request: NextRequest) {
   try {

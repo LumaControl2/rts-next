@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { dbConnect } from '@/lib/mongodb';
 import { getUserFromRequest } from '@/lib/authMiddleware';
 import Cierre from '@/models/Cierre';
+import '@/models/Usuario';
 
 export async function GET(
   request: NextRequest,
