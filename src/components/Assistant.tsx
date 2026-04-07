@@ -91,14 +91,20 @@ export default function Assistant() {
       return { label: `📍 Navegando a ${accion.bateriaId || accion.pantalla}`, success: true };
     }
 
-    // INICIAR_JORNADA — already created by backend
+    // INICIAR_JORNADA — created by backend with placa+km
     if (tipo === 'INICIAR_JORNADA') {
       if (actionResult?.success) {
         emitAssistantEvent({ type: 'JORNADA_CREADA', payload: actionResult });
-        setTimeout(() => router.push('/jornada'), 800);
+        // Navigate to jornada page which will show the active jornada
+        setTimeout(() => {
+          router.push('/jornada');
+          // Force home to refresh too
+          emitAssistantEvent({ type: 'DATOS_CAMBIARON' });
+        }, 800);
         return { label: '🚗 Jornada iniciada', success: true };
       }
-      return { label: '❌ Error al iniciar jornada', success: false };
+      // If it failed because no placa/km, the AI should have asked — don't navigate
+      return { label: `❌ ${actionResult?.error || 'Error al iniciar jornada'}`, success: false };
     }
 
     // REGISTRAR_POZO — already saved by backend

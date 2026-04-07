@@ -34,7 +34,7 @@ ACCIONES POSIBLES:
 - {"tipo": "INFO", "consulta": "texto"} — cuando el operador pregunta algo sin acción
 
 REGLAS DE ACCIÓN:
-1. Si el operador saluda o dice "inicio turno", pregunta placa y km si no los dijo
+1. Si el operador dice "inicio turno" SIN placa y km: NO generes acción INICIAR_JORNADA. En su lugar pregúntale: "¿Cuál es la placa y el kilometraje inicial?" con accion: null. SOLO genera INICIAR_JORNADA cuando tenga AMBOS datos (placa Y km).
 2. Si dice datos de un pozo, genera REGISTRAR_POZO con todos los campos que mencionó
 3. Si dice "parado" + motivo, genera REGISTRAR_POZO_PARADO con el código de diferida correcto
 4. Si dice "copiar ayer" o "los demás están igual", genera COPIAR_AYER
@@ -285,18 +285,25 @@ async function executeAction(accion: any, userId: string, context: any) {
   try {
     switch (accion.tipo) {
       case 'INICIAR_JORNADA': {
+        const placa = accion.datos?.placa;
+        const kmInicio = accion.datos?.kmInicio;
+        if (!placa) {
+          return { success: false, error: 'Falta la placa del vehículo' };
+        }
+        // Check if there's already an active jornada
+        const existing = await Jornada.findOne({ operadorId: userId, estado: 'ACTIVA' });
+        if (existing) {
+          return { success: false, error: 'Ya tiene una jornada activa' };
+        }
         const jornada = await Jornada.create({
           fecha: new Date(),
           operadorId: userId,
           turno: new Date().getHours() >= 6 && new Date().getHours() < 18 ? 'DIA' : 'NOCHE',
           estado: 'ACTIVA',
-          vehiculo: {
-            placa: accion.datos?.placa || '',
-            kmInicio: accion.datos?.kmInicio || 0,
-          },
+          vehiculo: { placa: String(placa).toUpperCase(), kmInicio: kmInicio || 0 },
           actividades: [],
         });
-        return { success: true, tipo: 'JORNADA_CREADA', id: jornada._id };
+        return { success: true, tipo: 'JORNADA_CREADA', id: jornada._id, placa, kmInicio };
       }
 
       case 'REGISTRAR_POZO': {
