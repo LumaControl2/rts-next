@@ -255,15 +255,16 @@ export default function SupervisorDashboard() {
     }
   }, [user, token, fetchAll]);
 
-  // Polling every 15s
+  // Polling every 15s — only after initial load
   useEffect(() => {
+    if (loadingData) return;
     intervalRef.current = setInterval(() => {
       fetchCierres(true);
     }, 15000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [fetchCierres]);
+  }, [loadingData, fetchCierres]);
 
   // -----------------------------------------------------------------------
   // Actions

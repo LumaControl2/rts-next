@@ -33,28 +33,44 @@ export default function HomePage() {
     if (!user || !token) return;
 
     try {
-      // Fetch baterias assigned to this user
+      // Fetch all baterias (operadores no tienen asignación fija)
       const batRes = await authFetch('/api/baterias');
       if (!batRes.ok) return;
-      const allBaterias = await batRes.json();
-
-      // Filter to user's assigned baterias
-      const misBaterias = allBaterias.filter((b: any) =>
-        user.baterias.includes(b.codigo) || user.baterias.includes(b._id)
-      );
+      const batJson = await batRes.json();
+      const misBaterias = batJson.data || batJson;
 
       // For each battery, get pozo count and check for today's cierre
       const enriched: BateriaInfo[] = await Promise.all(
         misBaterias.map(async (bat: any) => {
           let pozosCount = 0;
           let potencialTotal = 0;
+          let cierreHoy = null;
           try {
-            const pozRes = await authFetch(`/api/pozos?bateria=${encodeURIComponent(bat._id)}`);
+            const pozRes = await authFetch(`/api/pozos?bateria=${encodeURIComponent(bat.codigo)}`);
             if (pozRes.ok) {
-              const pozData = await pozRes.json();
-              const activos = pozData.filter((p: any) => p.estado === 'ACTIVO');
-              pozosCount = activos.length;
-              potencialTotal = activos.reduce((s: number, p: any) => s + (p.potencialBls || 0), 0);
+              const pozJson = await pozRes.json();
+              const pozData = pozJson.data || pozJson;
+              pozosCount = Array.isArray(pozData) ? pozData.length : 0;
+              potencialTotal = Array.isArray(pozData) ? pozData.reduce((s: number, p: any) => s + (p.potencialCrudo || 0), 0) : 0;
+            }
+          } catch { /* ignore */ }
+          // Check for today's cierre
+          try {
+            const today = new Date().toISOString().split('T')[0];
+            const cierreRes = await authFetch(`/api/cierres?fecha=${today}&bateria=${encodeURIComponent(bat.codigo)}`);
+            if (cierreRes.ok) {
+              const cierreJson = await cierreRes.json();
+              const cierreArr = cierreJson.data || cierreJson;
+              if (Array.isArray(cierreArr) && cierreArr.length > 0) {
+                const c = cierreArr[0];
+                cierreHoy = {
+                  estado: c.estado,
+                  pozosRegistrados: c.pozosRegistrados || 0,
+                  totalPozos: c.totalPozos || pozosCount,
+                  totalCrudo: c.totalCrudo || 0,
+                  totalAgua: c.totalAgua || 0,
+                };
+              }
             }
           } catch { /* ignore */ }
 
@@ -62,10 +78,10 @@ export default function HomePage() {
             _id: bat._id,
             codigo: bat.codigo,
             nombre: bat.nombre,
-            campo: bat.campo || 'Lote I',
+            campo: bat.zona || 'Lote I',
             pozosCount,
             potencialTotal,
-            cierreHoy: null, // TODO: fetch cierre status for today
+            cierreHoy,
           };
         })
       );
@@ -128,7 +144,7 @@ export default function HomePage() {
   }
 
   function handleBateriaAction(bat: BateriaInfo) {
-    router.push(`/cierre/${encodeURIComponent(bat._id)}`);
+    router.push(`/cierre/${encodeURIComponent(bat.codigo)}`);
   }
 
   const initials = user.nombre
