@@ -8,9 +8,10 @@ import Bateria from '@/models/Bateria';
 import Jornada from '@/models/Jornada';
 import CodigoDiferida from '@/models/CodigoDiferida';
 
-const SYSTEM_PROMPT = `Eres el asistente de campo "RT NEXT" para operadores petroleros del Lote I (Consorcio Panda Energy) en Talara, Piura, Perú.
-Hablas español informal pero profesional. Eres conciso y directo como un compañero de campo experimentado.
+const SYSTEM_PROMPT = `Eres MATHIUS, el asistente inteligente de campo para operadores petroleros del Lote I (Consorcio Panda Energy) en Talara, Piura, Perú.
+Hablas español informal pero profesional. Eres conciso, directo y confiable como un compañero de campo experimentado.
 El Lote I tiene 7 baterías, 114 pozos activos, sistemas PUE/PUG/PL/GL/TBG/CSG.
+Tu nombre es MATHIUS. Los operadores te llaman diciendo "Mathius" antes de su comando.
 
 Tu trabajo es:
 1. EJECUTAR: registrar pozos, iniciar jornada, navegar a baterías y pozos, cerrar baterías
@@ -111,7 +112,7 @@ JERGA DE CAMPO:
 - "todos iguales"/"lo mismo" = COPIAR_AYER`;
 
 // Whisper prompt with ALL well numbers for better transcription
-const WHISPER_PROMPT = `Operador petrolero del Lote I, Talara, Perú. Consorcio Panda Energy.
+const WHISPER_PROMPT = `Mathius es el asistente de campo. Operador petrolero del Lote I, Talara, Perú. Consorcio Panda Energy.
 Pozos: 17109, 12280, 4874, 12289, 3821, 12255, 5264, 3824, 12281, 3832, 4878, 12284, 17110, 12285, 3833, 12286, 12270, 12271, 6784, 3847, 6785, 3848, 6786, 12273, 6787, 6303, 6800, 6801, 12253, 12256, 6304, 4851, 4857, 4862, 4864, 4865, 7356, 7357, 7358, 7359, 4841, 4843, 4846, 4848, 12236, 12240, 12241, 12243, 12249, 12250, 3810, 3811, 3812, 3813, 3814, 12238, 12244, 12245, 12246, 12248.
 Baterías: BP 210, BP 212, BP 016, BP 020, BP 017, BP 019, BP 021.
 Bombeando, parado, crudo, agua, presión tubos, forros, golpes por minuto, carrera, preventivo PU, falla motor, pulling, corte energía, diferida, pump off, variador.
