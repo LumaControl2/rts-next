@@ -212,32 +212,41 @@ export default function PozoCapturaPage({
       setVoiceProcessing(true);
 
       try {
-        const res = await authFetch('/api/voice-parse', {
+        const res = await fetch('/api/voice-parse', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ texto: transcript }),
         });
-        if (res.ok) {
-          const json = await res.json();
-          const parsed = json.data || json;
+        const json = await res.json();
+
+        if (res.ok && json.data) {
+          const parsed = json.data;
           const filled: string[] = [];
-          if (parsed.crudoBls != null) { setCrudoBls(parsed.crudoBls); filled.push('crudoBls'); }
-          if (parsed.aguaBls != null) { setAguaBls(parsed.aguaBls); filled.push('aguaBls'); }
-          if (parsed.presionTubos != null) { setPresionTubos(parsed.presionTubos); filled.push('presionTubos'); }
-          if (parsed.presionForros != null) { setPresionForros(parsed.presionForros); filled.push('presionForros'); }
-          if (parsed.gpm != null) { setGpm(parsed.gpm); filled.push('gpm'); }
-          if (parsed.carrera != null) { setCarrera(parsed.carrera); filled.push('carrera'); }
+          if (typeof parsed.crudoBls === 'number') { setCrudoBls(parsed.crudoBls); filled.push('crudoBls'); }
+          if (typeof parsed.aguaBls === 'number') { setAguaBls(parsed.aguaBls); filled.push('aguaBls'); }
+          if (typeof parsed.presionTubos === 'number') { setPresionTubos(parsed.presionTubos); filled.push('presionTubos'); }
+          if (typeof parsed.presionForros === 'number') { setPresionForros(parsed.presionForros); filled.push('presionForros'); }
+          if (typeof parsed.gpm === 'number') { setGpm(parsed.gpm); filled.push('gpm'); }
+          if (typeof parsed.carrera === 'number') { setCarrera(parsed.carrera); filled.push('carrera'); }
+          if (typeof parsed.timerOn === 'number') { setTimerOn(parsed.timerOn); filled.push('timerOn'); }
+          if (typeof parsed.timerOff === 'number') { setTimerOff(parsed.timerOff); filled.push('timerOff'); }
           if (parsed.estado === 'PARADO') { setEstadoPozo('PARADO'); filled.push('estadoPozo'); }
           if (parsed.estado === 'BOMBEANDO') { setEstadoPozo('BOMBEANDO'); filled.push('estadoPozo'); }
-          if (parsed.codigoDiferida) { setCodigoDif(parsed.codigoDiferida); filled.push('codigoDiferida'); }
-          if (parsed.comentarios) { setComentarios(parsed.comentarios); filled.push('comentarios'); }
-          if (parsed.timerOn != null) { setTimerOn(parsed.timerOn); filled.push('timerOn'); }
-          if (parsed.timerOff != null) { setTimerOff(parsed.timerOff); filled.push('timerOff'); }
+          if (parsed.codigoDiferida && parsed.codigoDiferida !== 'null') {
+            setCodigoDif(parsed.codigoDiferida);
+            // Also set the area for the diferida selector
+            const matchCode = codigosDiferida.find(c => c.codigo === parsed.codigoDiferida);
+            if (matchCode) setAreaDiferida(matchCode.area);
+            filled.push('codigoDiferida');
+          }
+          if (parsed.comentarios && parsed.comentarios.trim()) { setComentarios(parsed.comentarios); filled.push('comentarios'); }
           setVoiceFilledFields(filled);
+          setVoiceTranscript(prev => prev + ` → ${filled.length} campos llenados`);
         } else {
-          setError('Error al procesar voz. Intente de nuevo.');
+          setError(json.error || 'Error al procesar voz. Intente de nuevo.');
         }
-      } catch {
-        setError('Error procesando voz. Intente de nuevo.');
+      } catch (err) {
+        setError('Error de conexión al procesar voz.');
       } finally {
         setVoiceProcessing(false);
       }
