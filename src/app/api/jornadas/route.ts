@@ -11,9 +11,11 @@ export async function GET(request: NextRequest) {
   try {
     await dbConnect();
 
+    const auth = await getUserFromRequest(request);
     const searchParams = request.nextUrl.searchParams;
     const fecha = searchParams.get('fecha');
     const operador = searchParams.get('operador');
+    const estado = searchParams.get('estado');
 
     const filter: Record<string, unknown> = {};
 
@@ -25,6 +27,12 @@ export async function GET(request: NextRequest) {
     }
     if (operador) {
       filter.operadorId = operador;
+    } else if (auth && estado) {
+      // If filtering by estado without explicit operador, filter by current user
+      filter.operadorId = auth.userId;
+    }
+    if (estado) {
+      filter.estado = estado;
     }
 
     const jornadas = await Jornada.find(filter)

@@ -28,12 +28,23 @@ export default function HomePage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [baterias, setBaterias] = useState<BateriaInfo[]>([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [jornada, setJornada] = useState<any>(null);
 
   const loadBaterias = useCallback(async () => {
     if (!user || !token) return;
 
     try {
-      // Fetch all baterias (operadores no tienen asignación fija)
+      // Check for active jornada
+      try {
+        const jorRes = await authFetch('/api/jornadas?estado=ACTIVA');
+        if (jorRes.ok) {
+          const jorJson = await jorRes.json();
+          const jorArr = jorJson.data || jorJson;
+          if (Array.isArray(jorArr) && jorArr.length > 0) setJornada(jorArr[0]);
+        }
+      } catch { /* ignore */ }
+
+      // Fetch all baterias
       const batRes = await authFetch('/api/baterias');
       if (!batRes.ok) return;
       const batJson = await batRes.json();
@@ -230,23 +241,48 @@ export default function HomePage() {
             Jornada
           </h3>
           <div className="bg-navy-surface rounded-xl p-5 border border-navy-light">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-cyan/10 flex items-center justify-center">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12,6 12,12 16,14" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="text-text-primary font-medium">Sin jornada activa</p>
-                <p className="text-muted text-sm">Inicie su jornada para registrar actividades</p>
-              </div>
-            </div>
-            <button
-              className="w-full mt-4 py-3.5 rounded-xl bg-cyan/20 text-cyan border border-cyan/30 font-bold text-base transition-all active:scale-98 min-h-[48px]"
-            >
-              INICIAR JORNADA
-            </button>
+            {jornada ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-success/10 flex items-center justify-center">
+                    <span className="text-2xl">🚗</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-text-primary font-medium">Jornada activa</p>
+                    <p className="text-muted text-sm">
+                      {jornada.vehiculo?.placa} | Km {jornada.vehiculo?.kmInicio?.toLocaleString()} | {jornada.actividades?.length || 0} actividades
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => router.push('/jornada')}
+                  className="w-full mt-4 py-3.5 rounded-xl bg-success/20 text-success border border-success/30 font-bold text-base transition-all active:scale-98 min-h-[48px]"
+                >
+                  VER JORNADA
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-cyan/10 flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <polyline points="12,6 12,12 16,14" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-text-primary font-medium">Sin jornada activa</p>
+                    <p className="text-muted text-sm">Inicie su jornada para registrar actividades</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => router.push('/jornada')}
+                  className="w-full mt-4 py-3.5 rounded-xl bg-cyan/20 text-cyan border border-cyan/30 font-bold text-base transition-all active:scale-98 min-h-[48px]"
+                >
+                  INICIAR JORNADA
+                </button>
+              </>
+            )}
           </div>
         </div>
 
