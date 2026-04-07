@@ -48,6 +48,13 @@ export default function Assistant() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listenStartedRef = useRef(false);
 
+  // Stable refs for values that change often (prevent callback chain recreation)
+  const messagesRef = useRef<Message[]>([]);
+  const tokenRef = useRef(token);
+  const sendToAPIRef = useRef<(transcript: string, audioBlob?: Blob) => Promise<void>>(async () => {});
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+
   useEffect(() => { stateRef.current = listenState; }, [listenState]);
 
   // Context from URL
@@ -154,7 +161,7 @@ export default function Assistant() {
     return { label: '', success: true };
   }, [router, getContext]);
 
-  // Send to API
+  // Send to API — uses refs for stable callback (no recreation on messages change)
   const sendToAPI = useCallback(async (transcript: string, audioBlob?: Blob) => {
     if (processingRef.current) return;
     processingRef.current = true;
@@ -169,11 +176,11 @@ export default function Assistant() {
       if (audioBlob) fd.append('audio', audioBlob, 'rec.webm');
       else fd.append('text', transcript);
       fd.append('context', JSON.stringify(ctx));
-      fd.append('history', JSON.stringify(messages.slice(-10).map(m => ({ role: m.role, content: m.content }))));
+      fd.append('history', JSON.stringify(messagesRef.current.slice(-10).map(m => ({ role: m.role, content: m.content }))));
 
       const res = await fetch('/api/assistant', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${tokenRef.current}` },
         body: fd,
       });
       const json = await res.json();
@@ -229,7 +236,10 @@ export default function Assistant() {
       processingRef.current = false;
       setListenState('off');
     }
-  }, [getCierreId, getContext, messages, token, executeAction, speak, showToast]);
+  }, [getCierreId, getContext, executeAction, speak, showToast]);
+
+  // Keep ref in sync
+  useEffect(() => { sendToAPIRef.current = sendToAPI; }, [sendToAPI]);
 
   // ─── CONTINUOUS BACKGROUND LISTENING ────────────────
 
@@ -275,7 +285,7 @@ export default function Assistant() {
     mr.onstop = async () => {
       const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       if (blob.size > 1000 && hasSpeechRef.current) {
-        await sendToAPI('', blob);
+        await sendToAPIRef.current?.('', blob);
       }
       hasSpeechRef.current = false;
     };
@@ -317,7 +327,7 @@ export default function Assistant() {
       rafRef.current = requestAnimationFrame(monitor);
     };
     rafRef.current = requestAnimationFrame(monitor);
-  }, [stopListening, sendToAPI]);
+  }, [stopListening]);
 
   // Auto-restart listening after idle
   useEffect(() => {
