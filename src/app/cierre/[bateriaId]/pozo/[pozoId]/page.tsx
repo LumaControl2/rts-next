@@ -67,6 +67,8 @@ export default function PozoCapturaPage({
 
   // Voice state
   const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceProcessing, setVoiceProcessing] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceFilledFields, setVoiceFilledFields] = useState<string[]>([]);
 
   const potencial = pozo?.potencialCrudo || 0;
@@ -178,10 +180,18 @@ export default function PozoCapturaPage({
   const selectedCodigo = codigosDiferida.find(c => c.codigo === codigoDif);
 
   // Voice recognition
-  function handleVoice() {
+  async function handleVoice() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setError('Reconocimiento de voz no disponible en este navegador.');
+      setError('Reconocimiento de voz no disponible. Use Chrome en Android.');
+      return;
+    }
+
+    // Check microphone permission
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError('Permita el acceso al micrófono para usar dictado por voz.');
       return;
     }
 
@@ -189,39 +199,62 @@ export default function PozoCapturaPage({
     recognition.lang = 'es-PE';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    recognition.continuous = false;
 
     setVoiceActive(true);
+    setVoiceTranscript('');
+    setError('');
 
     recognition.onresult = async (event: any) => {
       const transcript = event.results[0][0].transcript;
       setVoiceActive(false);
+      setVoiceTranscript(transcript);
+      setVoiceProcessing(true);
 
       try {
         const res = await authFetch('/api/voice-parse', {
           method: 'POST',
-          body: JSON.stringify({ text: transcript }),
+          body: JSON.stringify({ texto: transcript }),
         });
         if (res.ok) {
-          const parsed = await res.json();
+          const json = await res.json();
+          const parsed = json.data || json;
           const filled: string[] = [];
-          if (parsed.crudoBls !== undefined) { setCrudoBls(parsed.crudoBls); filled.push('crudoBls'); }
-          if (parsed.aguaBls !== undefined) { setAguaBls(parsed.aguaBls); filled.push('aguaBls'); }
-          if (parsed.presionTubos !== undefined) { setPresionTubos(parsed.presionTubos); filled.push('presionTubos'); }
-          if (parsed.presionForros !== undefined) { setPresionForros(parsed.presionForros); filled.push('presionForros'); }
-          if (parsed.gpm !== undefined) { setGpm(parsed.gpm); filled.push('gpm'); }
-          if (parsed.carrera !== undefined) { setCarrera(parsed.carrera); filled.push('carrera'); }
-          if (parsed.estadoPozo) { setEstadoPozo(parsed.estadoPozo); filled.push('estadoPozo'); }
+          if (parsed.crudoBls != null) { setCrudoBls(parsed.crudoBls); filled.push('crudoBls'); }
+          if (parsed.aguaBls != null) { setAguaBls(parsed.aguaBls); filled.push('aguaBls'); }
+          if (parsed.presionTubos != null) { setPresionTubos(parsed.presionTubos); filled.push('presionTubos'); }
+          if (parsed.presionForros != null) { setPresionForros(parsed.presionForros); filled.push('presionForros'); }
+          if (parsed.gpm != null) { setGpm(parsed.gpm); filled.push('gpm'); }
+          if (parsed.carrera != null) { setCarrera(parsed.carrera); filled.push('carrera'); }
+          if (parsed.estado === 'PARADO') { setEstadoPozo('PARADO'); filled.push('estadoPozo'); }
+          if (parsed.estado === 'BOMBEANDO') { setEstadoPozo('BOMBEANDO'); filled.push('estadoPozo'); }
+          if (parsed.codigoDiferida) { setCodigoDif(parsed.codigoDiferida); filled.push('codigoDiferida'); }
           if (parsed.comentarios) { setComentarios(parsed.comentarios); filled.push('comentarios'); }
+          if (parsed.timerOn != null) { setTimerOn(parsed.timerOn); filled.push('timerOn'); }
+          if (parsed.timerOff != null) { setTimerOff(parsed.timerOff); filled.push('timerOff'); }
           setVoiceFilledFields(filled);
+        } else {
+          setError('Error al procesar voz. Intente de nuevo.');
         }
       } catch {
         setError('Error procesando voz. Intente de nuevo.');
+      } finally {
+        setVoiceProcessing(false);
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event: any) => {
       setVoiceActive(false);
-      setError('Error en reconocimiento de voz.');
+      setVoiceProcessing(false);
+      if (event.error === 'not-allowed') {
+        setError('Micrófono bloqueado. Permita el acceso en la configuración del navegador.');
+      } else if (event.error === 'no-speech') {
+        setError('No se detectó voz. Intente de nuevo.');
+      } else if (event.error === 'network') {
+        setError('Sin conexión. El dictado requiere señal de internet.');
+      } else {
+        setError(`Error de voz: ${event.error}`);
+      }
     };
 
     recognition.onend = () => {
@@ -609,20 +642,44 @@ export default function PozoCapturaPage({
           />
         </div>
 
+        {/* Voice transcript preview */}
+        {voiceTranscript && (
+          <div className="bg-cyan/10 border border-cyan/30 rounded-xl p-3 mb-4">
+            <p className="text-xs text-cyan font-medium mb-1">Transcripción:</p>
+            <p className="text-white text-sm italic">&ldquo;{voiceTranscript}&rdquo;</p>
+          </div>
+        )}
+
         {/* Voice + Photo buttons */}
         <div className="flex gap-3 mb-4">
           <button
             onClick={handleVoice}
-            disabled={voiceActive}
+            disabled={voiceActive || voiceProcessing}
             className={cn(
               'flex-1 py-3 rounded-xl font-bold text-base transition-all border-2 flex items-center justify-center gap-2',
               voiceActive
-                ? 'bg-cyan/20 border-cyan text-cyan animate-pulse'
+                ? 'bg-danger/20 border-danger text-danger animate-pulse'
+                : voiceProcessing
+                ? 'bg-cyan/20 border-cyan text-cyan'
                 : 'bg-navy-mid border-navy-light text-muted hover:border-cyan hover:text-cyan'
             )}
           >
-            <span className="text-xl">{'\uD83C\uDFA4'}</span>
-            {voiceActive ? 'Escuchando...' : 'Dictar (requiere senal)'}
+            {voiceProcessing ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" /></svg>
+                Procesando con IA...
+              </>
+            ) : voiceActive ? (
+              <>
+                <span className="text-xl">{'\uD83D\uDD34'}</span>
+                Escuchando... (hable ahora)
+              </>
+            ) : (
+              <>
+                <span className="text-xl">{'\uD83C\uDFA4'}</span>
+                Dictar lectura
+              </>
+            )}
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
